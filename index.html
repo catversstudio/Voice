@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MYRA AI - Live Voice</title>
+    <style>
+        /* --- THEME & SETUP --- */
+        :root {
+            --primary: #00f2ff;
+            --secondary: #bd00ff;
+            --bg-dark: #050510;
+            --glass: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            background-image: radial-gradient(circle at 50% 50%, #1a0b2e 0%, #000000 100%);
+            color: #fff;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* --- HEADER --- */
+        header {
+            text-align: center;
+            padding-top: 20px;
+            animation: fadeIn 1s ease-in;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin: 0;
+            background: linear-gradient(90deg, var(--primary), #fff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 15px var(--primary);
+            letter-spacing: 3px;
+        }
+
+        .status {
+            font-size: 0.8rem;
+            color: #00ff88;
+            letter-spacing: 1px;
+            margin-top: 5px;
+            text-shadow: 0 0 5px #00ff88;
+        }
+
+        /* --- THE ORB (The "Face" of the AI) --- */
+        .visualizer-container {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .orb-ring {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 0 20px var(--secondary), inset 0 0 20px var(--primary);
+            transition: all 0.3s ease;
+            cursor: pointer; /* Clickable */
+        }
+
+        /* Rotating Outer Ring */
+        .orb-ring::before {
+            content: '';
+            position: absolute;
+            width: 100%; height: 100%;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            border-top: 2px solid var(--primary);
+            border-right: 2px solid var(--secondary);
+            animation: spin 3s linear infinite;
+        }
+
+        /* Inner Glow */
+        .orb-core {
+            width: 120px;
+            height: 120px;
+            background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, rgba(0,0,0,0) 70%);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .mic-icon {
+            font-size: 3rem;
+            filter: drop-shadow(0 0 5px #fff);
+            transition: 0.3s;
+        }
+
+        /* STATES for the Orb */
+        .listening .orb-ring {
+            box-shadow: 0 0 50px #ff0055;
+            border-color: #ff0055;
+            transform: scale(1.1);
+        }
+        .listening .mic-icon { color: #ff0055; }
+        
+        .speaking .orb-ring {
+            box-shadow: 0 0 50px var(--primary);
+            animation: pulseTalk 0.5s infinite alternate;
+        }
+
+        .tap-instruction {
+            margin-top: 20px;
+            color: #aaa;
+            font-size: 0.9rem;
+            animation: blink 2s infinite;
+        }
+
+        /* --- CHAT AREA --- */
+        #chat-box {
+            height: 35%;
+            background: rgba(10, 10, 20, 0.8);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px 20px 0 0;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .msg {
+            padding: 10px 15px;
+            border-radius: 15px;
+            font-size: 0.95rem;
+            max-width: 85%;
+            word-wrap: break-word;
+        }
+        .user { align-self: flex-end; background: rgba(255,255,255,0.1); color: #fff; }
+        .bot { align-self: flex-start; background: linear-gradient(135deg, #2b0046, #bd00ff); color: #fff; border: 1px solid rgba(255,255,255,0.1); }
+
+        /* --- ANIMATIONS --- */
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes pulseTalk { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.05); opacity: 0.8; } }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>MYRA</h1>
+        <div class="status">● SYSTEM ONLINE</div>
+    </header>
+
+    <div class="visualizer-container">
+        <div class="orb-ring" id="orb" onclick="toggleListening()">
+            <div class="orb-core">
+                <div class="mic-icon" id="micIcon">🎤</div>
+            </div>
+        </div>
+        <div class="tap-instruction" id="statusText">TAP ORB TO SPEAK</div>
+    </div>
+
+    <div id="chat-box">
+        <div class="msg bot">Hello. I am Myra. Tap the orb to speak to me.</div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        // Your provided key is used here securely within your local file
+        const API_KEY = "AIzaSyAdJxhkCdg7C8wnPth6xRMPaJyfCe9oGbQ"; 
+        const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + API_KEY;
+
+        const orb = document.getElementById('orb');
+        const statusText = document.getElementById('statusText');
+        const chatBox = document.getElementById('chat-box');
+        
+        let recognition;
+        let isListening = false;
+
+        // --- SPEECH RECOGNITION SETUP (Android/Chrome) ---
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+
+            recognition.onstart = function() {
+                isListening = true;
+                orb.classList.add('listening');
+                statusText.innerText = "LISTENING...";
+            };
+
+            recognition.onend = function() {
+                isListening = false;
+                orb.classList.remove('listening');
+                statusText.innerText = "PROCESSING...";
+            };
+
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                addMessage(transcript, 'user');
+                askGemini(transcript);
+            };
+        } else {
+            alert("Voice features not supported on this browser. Try Chrome.");
+        }
+
+        // --- FUNCTIONS ---
+
+        function toggleListening() {
+            if (isListening) {
+                recognition.stop();
+            } else {
+                recognition.start();
+            }
+        }
+
+        function addMessage(text, sender) {
+            const div = document.createElement('div');
+            div.className = `msg ${sender}`;
+            div.innerText = text;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // --- CALL GOOGLE GEMINI API ---
+        async function askGemini(userText) {
+            orb.classList.add('speaking'); // Visual "thinking" state
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: userText }] }]
+                    })
+                });
+
+                const data = await response.json();
+                const aiReply = data.candidates[0].content.parts[0].text;
+                
+                // Display text
+                addMessage(aiReply, 'bot');
+                
+                // Speak audio
+                speak(aiReply);
+
+            } catch (error) {
+                addMessage("Error connecting to AI Network.", 'bot');
+                console.error(error);
+            }
+            
+            orb.classList.remove('speaking');
+            statusText.innerText = "TAP ORB TO SPEAK";
+        }
+
+        // --- TEXT TO SPEECH ---
+        function speak(text) {
+            // Cancel any current speech
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.pitch = 1.1; // Slightly higher for feminine robot voice
+            utterance.rate = 1.0;  // Normal speed
+
+            // Visual effect while speaking
+            utterance.onstart = () => { orb.classList.add('speaking'); statusText.innerText = "SPEAKING..."; };
+            utterance.onend = () => { orb.classList.remove('speaking'); statusText.innerText = "TAP ORB TO SPEAK"; };
+
+            window.speechSynthesis.speak(utterance);
+        }
+    </script>
+</body>
+</html>
